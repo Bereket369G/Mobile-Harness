@@ -1416,13 +1416,7 @@ class RuntimeInstaller(private val context: Context) {
      * abort setup.
      */
     private fun readProcessOutputSafely(file: File): String = runCatching {
-        val decoder = java.nio.charset.StandardCharsets.UTF_8
-            .newDecoder()
-            .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
-        val bytes = file.readBytes()
-        val buffer = java.nio.ByteBuffer.wrap(bytes)
-        decoder.decode(buffer).toString()
+        file.readTailText(MAX_PROCESS_OUTPUT_BYTES)
     }.getOrElse { error ->
         android.util.Log.w("RuntimeInstaller", "Could not decode process output as UTF-8: ${error.message}")
         ""
@@ -1895,6 +1889,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         )
         private const val MAX_TERMINAL_LINE = 500
         private const val MAX_COLLECTED_OUTPUT = 24_000
+        private const val MAX_PROCESS_OUTPUT_BYTES = 256 * 1024
         private val ANSI_ESCAPE = Regex("\\u001B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))")
     }
 }

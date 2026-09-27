@@ -615,6 +615,7 @@ class ClaudeRuntimeBridge(
                 !msg.text.contains("API Error")
             }
             .dropLast(1) // Drop the current prompt which was just added
+            .recentWithinCharacterBudget(MAX_CONVERSATION_HISTORY_CHARACTERS)
 
         val sb = StringBuilder()
         sb.appendLine("<project_workspace>")
@@ -689,7 +690,8 @@ class ClaudeRuntimeBridge(
         val workspacePath = workspace.canonicalFile.toPath()
         workspace.walkTopDown()
             .onEnter { directory ->
-                directory == workspace || (
+                val relative = if (directory == workspace) "" else directory.relativeTo(workspace).invariantSeparatorsPath
+                directory == workspace || (!isInternalRuntimePath(relative) &&
                     !java.nio.file.Files.isSymbolicLink(directory.toPath()) &&
                         runCatching { directory.canonicalFile.toPath().startsWith(workspacePath) }.getOrDefault(false)
                     )
@@ -738,8 +740,23 @@ class ClaudeRuntimeBridge(
     private fun buildChangeDetails(projectId: String, workspace: File, paths: List<String>): List<ChangeItem> {
         val backup = File(checkpointDir(projectId), "project")
         return paths.map { path ->
-            val before = safeWorkspaceFile(backup, path).takeIf(File::isFile)?.readBytes() ?: ByteArray(0)
-            val after = safeWorkspaceFile(workspace, path).takeIf(File::isFile)?.readBytes() ?: ByteArray(0)
+            val beforeFile = safeWorkspaceFile(backup, path).takeIf(File::isFile)
+            val afterFile = safeWorkspaceFile(workspace, path).takeIf(File::isFile)
+            if (listOfNotNull(beforeFile, afterFile).any { it.length() > MAX_DIFF_FILE_BYTES }) {
+                return@map ChangeItem(
+                    path = path,
+                    additions = 0,
+                    deletions = 0,
+                    diffLines = listOf(
+                        DiffLine(
+                            DiffLineType.INFO,
+                            "File is too large to preview safely. Undo and Keep still work.",
+                        ),
+                    ),
+                )
+            }
+            val before = beforeFile?.readBytes() ?: ByteArray(0)
+            val after = afterFile?.readBytes() ?: ByteArray(0)
             val binary = before.any { it == 0.toByte() } || after.any { it == 0.toByte() }
             val (additions, deletions) = lineChanges(before, after)
             ChangeItem(
@@ -865,6 +882,9 @@ class ClaudeRuntimeBridge(
     }
 
     private fun snapshot(root: File): Map<String, String> = root.walkTopDown()
+        .onEnter { directory ->
+            directory == root || !isInternalRuntimePath(directory.relativeTo(root).invariantSeparatorsPath)
+        }
         .filter { it.isFile && !isInternalRuntimePath(it.relativeTo(root).invariantSeparatorsPath) }
         .associate { it.relativeTo(root).path to digest(it) }
 
@@ -875,7 +895,9 @@ class ClaudeRuntimeBridge(
 
     private fun isInternalRuntimePath(path: String): Boolean {
         val normalized = path.replace('\\', '/')
-        return normalized == ".claude" || normalized == ".claude.json" || normalized.startsWith(".claude/")
+        return normalized == ".claude.json" || IGNORED_DIRECTORY_NAMES.any { directory ->
+            normalized == directory || normalized.startsWith("$directory/") || normalized.contains("/$directory/")
+        }
     }
 
     private fun digest(file: File): String {
@@ -1007,7 +1029,23 @@ class ClaudeRuntimeBridge(
     companion object {
         private const val MAX_DIFF_LINES = 2_000
         private const val MAX_RENDERED_DIFF_LINES = 600
+        private const val MAX_DIFF_FILE_BYTES = 1_000_000L
         private const val DIFF_CONTEXT_LINES = 3
         private const val FOREGROUND_PROGRESS_MIN_INTERVAL_MS = 750L
+        private const val MAX_CONVERSATION_HISTORY_CHARACTERS = 160_000
+        private val IGNORED_DIRECTORY_NAMES = setOf(
+            ".claude",
+            ".git",
+            ".gradle",
+            ".idea",
+            ".next",
+            ".dart_tool",
+            ".venv",
+            "build",
+            "dist",
+            "node_modules",
+            "target",
+            "venv",
+        )
     }
 }
