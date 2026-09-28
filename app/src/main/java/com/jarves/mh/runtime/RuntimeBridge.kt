@@ -26,6 +26,21 @@ interface RuntimeBridge {
     suspend fun acceptFileChange(projectId: String, path: String): Boolean
 }
 
+/** Keeps recent context while preventing an old chat from becoming an unbounded prompt allocation. */
+internal fun List<ChatMessage>.recentWithinCharacterBudget(maxCharacters: Int): List<ChatMessage> {
+    if (maxCharacters <= 0 || isEmpty()) return emptyList()
+    var remaining = maxCharacters
+    val selected = ArrayDeque<ChatMessage>()
+    for (message in asReversed()) {
+        if (remaining <= 0) break
+        val text = if (message.text.length <= remaining) message.text else message.text.takeLast(remaining)
+        selected.addFirst(message.copy(text = text))
+        remaining -= text.length
+        if (text.length < message.text.length) break
+    }
+    return selected.toList()
+}
+
 object RuntimeLaunchConfigBuilder {
     fun build(profile: ProviderProfile, authToken: String? = null, localGatewayUrl: String? = null): RuntimeLaunchConfig {
         val environment = linkedMapOf("DISABLE_AUTOUPDATER" to "1")

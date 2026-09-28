@@ -183,7 +183,7 @@ object RuntimeSetupController {
         )
     }
 
-    fun fullLog(context: Context): String = logFile(context).takeIf(File::isFile)?.readText().orEmpty()
+    fun fullLog(context: Context): String = logFile(context).readTailText(MAX_LOG_BYTES.toInt())
 
     private fun set(context: Context, value: RuntimeSetupSnapshot) {
         mutableSnapshot.value = value
@@ -214,7 +214,7 @@ object RuntimeSetupController {
         file.parentFile?.mkdirs()
         file.appendText(sanitize(line) + "\n")
         if (file.length() > MAX_LOG_BYTES) {
-            val tail = file.readText().takeLast(MAX_LOG_BYTES.toInt())
+            val tail = file.readTailText(MAX_LOG_BYTES.toInt())
             file.writeText(tail.substringAfter('\n', tail))
         }
     }

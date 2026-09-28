@@ -526,6 +526,7 @@ class DshRuntimeBridge(
                 !msg.text.contains("API Error")
             }
             .dropLast(1)
+            .recentWithinCharacterBudget(MAX_CONVERSATION_HISTORY_CHARACTERS)
 
         val sb = StringBuilder()
         sb.appendLine("<project_workspace>")
@@ -648,6 +649,7 @@ class DshRuntimeBridge(
         const val DSH_HOME_GUEST_PATH = "/root/.dsh"
         const val FALLBACK_KEY_ENV = "MH_DSH_API_KEY"
         private const val FOREGROUND_PROGRESS_MIN_INTERVAL_MS = 750L
+        private const val MAX_CONVERSATION_HISTORY_CHARACTERS = 160_000
         private const val SDK_INITIALIZE_ID = 1
         private const val SDK_PROMPT_ID = 2
         private const val SDK_SHUTDOWN_ID = 3
