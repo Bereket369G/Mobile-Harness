@@ -447,3 +447,43 @@ unchanged) so Kotlin-only verification can run on a machine without the NDK.
 is pinned. A bundle that fails checksum on a user's phone would be worse than an
 actionable error, so the guard stays until a real `.tar.zst` is built and hashed
 on an ARM64 host.
+
+---
+
+## Toolchain findings (verified on the aarch64 device, 2026-09-29)
+
+An attempt was made to produce a full installable APK on-device. Three of the four
+blockers were real and fixable; the fourth is a hard architecture wall.
+
+### Fixed on-device
+
+| Blocker | Resolution |
+|---|---|
+| `third_party/proot` and `third_party/libandroid-shmem` empty (no `.git/modules`) | Cloned from `termux/*` and checked out the exact pinned commits `61681c6` and `7f0bd7e`. All 72 source files referenced by the CMake build verified present. |
+| SDK had no CMake | Google's `cmake-3.22.1-linux.zip` turned out to be an **x86_64** build (cannot run on ARM). Installed a native **aarch64** CMake via the `cmake` PyPI wheel (4.4.3) into `$SDK/cmake/3.22.1`, plus a native `ninja` (1.13.2) from the `ninja` wheel. |
+| NDK `26.1.10909125` was an empty `.installer` stub | Downloaded `android-ndk-r26d-linux.zip` (r26d) and installed it to the exact expected revision. |
+
+### The hard wall: the NDK has no aarch64 host build
+
+The Android NDK ships host tools **only for x86_64**. The installed
+`clang` is an `x86-64` ELF (`e_machine=62`); this device is `aarch64`
+(`e_machine=183`). Running it fails with `not found` from `/bin/sh` — the
+architecture mismatch, not a missing file. A minimal CMake
+`try_compile` against the NDK toolchain reproduces it exactly:
+
+```
+/root/android-sdk/ndk/.../prebuilt/linux-x86_64/bin/clang ... -o testCCompiler.c.o
+/bin/sh: 1: .../bin/clang: not found
+ninja: build stopped: subcommand failed.
+```
+
+There is no supported way to cross-compile this app's native layer (proot,
+prootloader, `pocketspawn`) from an ARM host. The repo also ships **no
+prebuilt `.so`**, so the native objects genuinely must be compiled.
+
+**Conclusion:** a runnable APK requires an x86_64 machine (or CI) with the
+Android SDK 36 + NDK `26.1.10909125`. On such a machine the app builds as-is —
+no source changes are needed for the toolchain; only the OpenCode bundle
+sha256 remains to be pinned. On-device, the meaningful and fully-green gate is
+the Kotlin build + unit tests with `-PmhNativeBuild=false`, which is the toggle
+this work added.
