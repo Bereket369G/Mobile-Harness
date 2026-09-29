@@ -54,6 +54,25 @@ function log(...args) {
   } catch (_) { /* terminal closed */ }
 }
 
+/*
+ * Safe "JSON then truncate" helper.
+ *
+ * JSON.stringify(undefined) returns undefined (not the string "undefined"), so
+ * the naive `JSON.stringify(x).slice(0, n)` idiom throws a TypeError the moment
+ * an optional field is absent -- which is exactly how the first spike run died
+ * on `session/new`. Everything optional goes through this instead.
+ */
+function brief(value, n) {
+  let s;
+  try {
+    s = typeof value === 'string' ? value : JSON.stringify(value);
+  } catch (e) {
+    s = String(value);
+  }
+  if (typeof s !== 'string') s = String(s);
+  return n > 0 && s.length > n ? s.slice(0, n) : s;
+}
+
 function record(obj) {
   const line = JSON.stringify(obj);
   rawLines.push(line);
@@ -219,10 +238,10 @@ function onLine(line) {
       break;
     }
     case 'session/error':
-      log('   [session/error]', JSON.stringify(msg.params).slice(0, 400));
+      log('   [session/error]', brief(msg.params, 400));
       break;
     default:
-      log('   [method]', msg.method, JSON.stringify(msg.params || {}).slice(0, 300));
+      log('   [method]', msg.method, brief(msg.params || {}, 300));
   }
 }
 
@@ -270,13 +289,32 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
   if (newResult && newResult.sessionId) {
     sessionId = newResult.sessionId;
     log('<-- session/new OK sessionId =', sessionId);
-    log('    available slash commands:',
-      JSON.stringify((newResult.availableCommands || (newResult.modes && []))).slice(0, 600));
-    if (Array.isArray(newResult.availableCommands) && newResult.availableCommands.length) {
-      updateKinds.set('__availableCommands__', newResult.availableCommands.length);
+    // NOTE: the real client (1.18.33) returns NO `availableCommands` and NO
+    // `modes`. It returns `configOptions` -- a list of typed selectors (model,
+    // mode, ...) each with `currentValue` + `options`. Dump whatever keys are
+    // actually present so the bridge can be built against reality, and guard
+    // every .slice() because JSON.stringify(undefined) returns undefined.
+    const keys = newResult && typeof newResult === 'object' ? Object.keys(newResult) : [];
+    log('    session/new result keys =', JSON.stringify(keys));
+    if (Array.isArray(newResult.availableCommands)) {
+      log('    availableCommands:',
+        JSON.stringify(newResult.availableCommands).slice(0, 600));
+    } else {
+      log('    availableCommands: (absent)');
+    }
+    if (Array.isArray(newResult.configOptions)) {
+      log('    configOptions:');
+      for (const opt of newResult.configOptions) {
+        const cur = opt && opt.currentValue;
+        const vals = (opt && Array.isArray(opt.options))
+          ? opt.options.map((o) => o && o.value).filter(Boolean)
+          : [];
+        log('      -', opt && opt.category, '|', opt && opt.name,
+            '| current =', cur, '|', vals.length, 'options:', vals.join(', '));
+      }
     }
   } else {
-    log('!! session/new failed:', JSON.stringify(newResult).slice(0, 400));
+    log('!! session/new failed:', brief(newResult, 400));
   }
 
   if (sessionId) {
