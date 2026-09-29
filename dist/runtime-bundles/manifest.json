@@ -80,9 +80,9 @@
     "opencode": {
       "version": "2026.09.1",
       "file": "pocketdev-opencode-arm64-2026.09.1.tar.zst",
-      "sha256": "",
-      "compressedBytes": 0,
-      "uncompressedBytes": 0,
+      "sha256": "86ab450829bb62e72fdafe6911e702e8818bdd781c0529704b984f1f4271bdd9",
+      "compressedBytes": 45954883,
+      "uncompressedBytes": 184893440,
       "includes": [
         "OpenCode 1.18.33 ARM64",
         "opencode-ai wrapper plus opencode-linux-arm64 binary",

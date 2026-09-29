@@ -1962,18 +1962,13 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             compressedBytes = 41_870_025L,
         )
 
-        /**
-         * Placeholder checksum/bytes: replaced by the real values once the OpenCode bundle is
-         * produced on an ARM64 host (see scripts/build-opencode-from-installed-android.sh).
-         * `ensureOpenCodeInstalled` refuses to install until these are pinned.
-         */
         const val OPENCODE_VERSION = "1.18.33"
         private const val OPENCODE_GUEST_BIN = "/usr/local/bin/opencode"
         private val OPENCODE_BUNDLE = RuntimeBundle(
             label = "OpenCode",
             fileName = "pocketdev-opencode-arm64-2026.09.1.tar.zst",
-            sha256 = "",
-            compressedBytes = 0L,
+            sha256 = "86ab450829bb62e72fdafe6911e702e8818bdd781c0529704b984f1f4271bdd9",
+            compressedBytes = 45_954_883L,
         )
         private const val MAX_TERMINAL_LINE = 500
         private const val MAX_COLLECTED_OUTPUT = 24_000
