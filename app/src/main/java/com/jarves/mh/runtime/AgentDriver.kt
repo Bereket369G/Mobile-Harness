@@ -11,6 +11,16 @@ enum class AgentCapability {
     REASONING_EFFORT,
     RESUME,
     INTERACTIVE_APPROVALS,
+
+    /**
+     * The agent understands `/command` text typed into the composer, so the composer offers a
+     * slash-command popup. OpenCode advertises its own commands over ACP, so it sets this; the
+     * other harnesses do not parse `/` and must not be offered a menu that would be sent verbatim.
+     */
+    SLASH_COMMANDS,
+
+    /** The agent understands `@path` file references, enabling the file-mention popup. */
+    FILE_MENTIONS,
 }
 
 interface AgentDriver {
@@ -45,6 +55,7 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             claude: RuntimeBridge,
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
+            openCode: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
                 BuiltInAgentDriver(
@@ -80,7 +91,67 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.RESUME,
                     ),
                 ),
+                BuiltInAgentDriver(
+                    AgentKind.OPENCODE,
+                    openCode,
+                    setOf(
+                        // No API_KEY by default: the genuine OpenCode client reaches the
+                        // free Zen catalog with no key, so the app must not demand one.
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
+                        // Only OpenCode advertises a command list and resolves @mentions; the
+                        // other harnesses would receive the inserted text verbatim.
+                        AgentCapability.SLASH_COMMANDS,
+                        AgentCapability.FILE_MENTIONS,
+                    ),
+                ),
             ),
         )
+
+        /**
+         * Capabilities for [kind] without needing a live [AgentRegistry] instance.
+         *
+         * The composer needs this to decide whether to offer the `/` and `@` popups, and the
+         * registry itself is owned by the view model. Mirrors the sets above, so an agent declared
+         * in one place is consistent everywhere.
+         */
+        fun capabilitiesOf(kind: AgentKind): Set<AgentCapability> = when (kind) {
+            AgentKind.CLAUDE_CODE -> setOf(
+                AgentCapability.API_KEY,
+                AgentCapability.ACCOUNT_LOGIN,
+                AgentCapability.PROVIDER_PICKER,
+                AgentCapability.MODEL_PICKER,
+                AgentCapability.RESUME,
+                AgentCapability.INTERACTIVE_APPROVALS,
+            )
+
+            AgentKind.DEEPSEEK_HARNESS -> setOf(
+                AgentCapability.API_KEY,
+                AgentCapability.PROVIDER_PICKER,
+                AgentCapability.MODEL_PICKER,
+                AgentCapability.RESUME,
+                AgentCapability.INTERACTIVE_APPROVALS,
+            )
+
+            AgentKind.ANTIGRAVITY -> setOf(
+                AgentCapability.ACCOUNT_LOGIN,
+                AgentCapability.MODEL_PICKER,
+                AgentCapability.REASONING_EFFORT,
+                AgentCapability.RESUME,
+            )
+
+            // No API_KEY by default: the genuine OpenCode client reaches the free Zen catalog
+            // with no key, so the app must not demand one.
+            AgentKind.OPENCODE -> setOf(
+                AgentCapability.PROVIDER_PICKER,
+                AgentCapability.MODEL_PICKER,
+                AgentCapability.RESUME,
+                AgentCapability.INTERACTIVE_APPROVALS,
+                AgentCapability.SLASH_COMMANDS,
+                AgentCapability.FILE_MENTIONS,
+            )
+        }
     }
 }

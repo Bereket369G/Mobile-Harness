@@ -811,6 +811,7 @@ fun AgentScreen(
                                 val shortTitle = when (agent) {
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
+                                    AgentKind.OPENCODE -> "OpenCode"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
                                 }
                                 Surface(
@@ -1977,8 +1978,15 @@ private fun defaultModelsForProvider(kind: ProviderKind): List<DiscoveredModel> 
     ProviderKind.DEEPSEEK -> listOf(
         DiscoveredModel("deepseek-v4-flash", "DeepSeek-V4 Flash"),
     )
+    // Shown before discovery runs (or when the catalog request fails). These are the
+    // genuinely $0 Zen models — the catalog is public, so discovery fills in the full
+    // list on demand and always sorts the free tier to the top.
     ProviderKind.OPENCODE_ZEN -> listOf(
-        DiscoveredModel(ProviderKind.OPENCODE_ZEN.defaultModel, "OpenCode Zen default"),
+        DiscoveredModel("space-bunny-free", "Space Bunny (free)", isFree = true),
+        DiscoveredModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (free)", isFree = true),
+        DiscoveredModel("mimo-v2.6-flash-free", "Mimo V2.6 Flash (free)", isFree = true),
+        DiscoveredModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (free)", isFree = true),
+        DiscoveredModel("longcat-2.5-preview-free", "LongCat 2.5 Preview (free)", isFree = true),
     )
     ProviderKind.NVIDIA_NIM -> listOf(
         DiscoveredModel(ProviderKind.NVIDIA_NIM.defaultModel, "Qwen 2.5 Coder 32B"),

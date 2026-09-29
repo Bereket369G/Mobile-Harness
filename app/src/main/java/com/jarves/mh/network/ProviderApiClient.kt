@@ -278,11 +278,18 @@ object ModelResponseParser {
                         if (id.isNotBlank()) {
                             val label = item.optString("display_name").ifBlank { item.optString("displayName") }.ifBlank { id }
                             val pricing = item.optJSONObject("pricing")
-                            val free = id.endsWith(":free", ignoreCase = true) || pricing?.let {
-                                listOf("prompt", "completion", "request").all { field ->
-                                    it.optString(field, "0").toDoubleOrNull() == 0.0
-                                }
-                            } == true
+                            // Catalogs signal free access in three different ways: an OpenRouter-style
+                            // ":free" tag, an explicit all-zero pricing block, or — as OpenCode Zen
+                            // does — no pricing data at all, with the tier encoded in the model id.
+                            // Zen only marks the suffix, so match that too; it is deliberately anchored
+                            // to the end so ids like "waffle-freeform" are not misread as free.
+                            val free = id.endsWith(":free", ignoreCase = true) ||
+                                id.endsWith("-free", ignoreCase = true) ||
+                                pricing?.let {
+                                    listOf("prompt", "completion", "request").all { field ->
+                                        it.optString(field, "0").toDoubleOrNull() == 0.0
+                                    }
+                                } == true
                             add(DiscoveredModel(id, label, free))
                         }
                     }

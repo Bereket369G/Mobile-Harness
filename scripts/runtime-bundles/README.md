@@ -32,6 +32,16 @@ partitions, Magisk files, device identifiers, or user data are included.
   excludes OAuth credentials, settings, conversations, projects, and all device
   data. Review Google's redistribution terms before publishing an APK containing
   this binary.
+- `opencode`: the pinned official OpenCode CLI npm payload (`opencode-ai`
+  wrapper plus the real `opencode-linux-arm64` ARM64 binary) and its launcher.
+  Build it from a verified PocketDev installation with
+  `scripts/runtime-bundles/build-opencode-from-installed-android.sh`; the export
+  excludes `auth.json`, API keys, provider settings, sessions, and projects.
+  The genuine client binary is what OpenCode Zen's free models require: Zen
+  refuses arbitrary HTTP clients with `403 "OpenCode's free tier can only be used
+  from within OpenCode"`, so the app must ship and run the real `opencode` binary
+  to reach the free catalog without an API key. Review the upstream project's
+  redistribution terms before publishing an APK containing this binary.
 
 The current artifact metadata and SHA-256 checksums live in
 `dist/runtime-bundles/manifest.json`. Large `.tar.zst` files and downloaded

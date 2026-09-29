@@ -163,12 +163,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -197,6 +199,7 @@ import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.model.ToolRequest
 import com.jarves.mh.model.WorkspaceEntry
 import com.jarves.mh.model.projectSlug
+import com.jarves.mh.runtime.AgentCapability
 import com.jarves.mh.runtime.RuntimeExecutionService
 import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
@@ -1172,6 +1175,7 @@ private const val CORE_RUNTIME_DOWNLOAD_MB = 69
 private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val AGY_RUNTIME_DOWNLOAD_MB = 40
+private const val OPENCODE_RUNTIME_DOWNLOAD_MB = 92
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 
@@ -1212,6 +1216,7 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
+            AgentKind.OPENCODE -> OPENCODE_RUNTIME_DOWNLOAD_MB
         } +
         (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
         (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
@@ -1297,11 +1302,13 @@ private fun AgentChoiceRow(
         AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
+        AgentKind.OPENCODE -> Color(0xFF0F9D7A)
     }
     val mark = when (agent) {
         AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
+        AgentKind.OPENCODE -> "OC"
     }
     Row(
         modifier = Modifier
@@ -4433,6 +4440,11 @@ private fun ChatTab(
     thinkingActive: Boolean,
     agentKind: AgentKind,
     pendingAttachments: List<ChatAttachment>,
+    /**
+     * Workspace entries offered by the `@` mention popup. Empty for agents that do not resolve
+     * mentions, which is also what keeps the popup hidden until a trigger is actually typed.
+     */
+    workspaceFiles: List<WorkspaceEntry> = emptyList(),
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
@@ -4448,7 +4460,14 @@ private fun ChatTab(
         view.keepScreenOn = isRunning
         onDispose { view.keepScreenOn = false }
     }
-    var prompt by rememberSaveable { mutableStateOf("") }
+    // The composer is a TextFieldValue rather than a bare String so the caret position is known.
+    // That cursor is what the `/` and `@` autocomplete popup anchors to, and it is what lets a
+    // selected completion be inserted in place instead of appended.
+    var prompt by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    // The active `/` or `@` trigger, derived from the caret on every keystroke. Kept as state
+    // rather than a local val so the popup recomposes when the caret moves, not just when the
+    // surrounding chat does.
+    var trigger by remember { mutableStateOf<ComposerTrigger?>(null) }
     val chatScope = rememberCoroutineScope()
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
@@ -4576,7 +4595,50 @@ private fun ChatTab(
                     }
                 }
 
-                val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
+                val canSend = prompt.text.isNotBlank() || pendingAttachments.isNotEmpty()
+
+                // `/` and `@` autocomplete. Candidates are gated on the selected agent's declared
+                // capabilities, so an agent that does not parse those tokens is never offered a
+                // menu whose insertion would be sent to the model verbatim.
+                val suggestions = remember(agentKind, workspaceFiles) {
+                    buildComposerSuggestions(agentKind, workspaceFiles)
+                }
+                val activeTrigger = trigger
+                val visibleSuggestions = remember(activeTrigger, suggestions) {
+                    if (activeTrigger == null) {
+                        emptyList()
+                    } else {
+                        filterSuggestions(
+                            candidates = if (activeTrigger.kind == ComposerTriggerKind.MENTION) {
+                                suggestions.filter { it.kind == ComposerSuggestionKind.MENTION }
+                            } else {
+                                suggestions.filter { it.kind == ComposerSuggestionKind.SLASH }
+                            },
+                            query = activeTrigger.query,
+                        )
+                    }
+                }
+
+                if (activeTrigger != null && visibleSuggestions.isNotEmpty() && !readOnly) {
+                    ComposerAutocompletePopup(
+                        suggestions = visibleSuggestions,
+                        onPick = { picked ->
+                            val triggerNow = trigger ?: return@ComposerAutocompletePopup
+                            val committed = ComposerAutocomplete.commit(
+                                text = prompt.text,
+                                trigger = triggerNow,
+                                insertion = picked.insertion,
+                            )
+                            prompt = TextFieldValue(
+                                text = committed.text,
+                                selection = TextRange(committed.caret),
+                            )
+                            // The caret now sits after the inserted text, so no trigger is open.
+                            trigger = null
+                        },
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
 
                 Surface(
                     shape = RoundedCornerShape(26.dp),
@@ -4608,7 +4670,14 @@ private fun ChatTab(
 
                         BasicTextField(
                             value = prompt,
-                            onValueChange = { prompt = it },
+                            onValueChange = { value ->
+                                prompt = value
+                                // Re-derive the active trigger from the caret on every keystroke.
+                                // Recomputing from text+caret (rather than diffing the old value)
+                                // is what keeps the popup correct when the caret is moved by the
+                                // keyboard or a paste lands mid-token.
+                                trigger = ComposerAutocomplete.detect(value.text, value.selection.end)
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 4.dp, vertical = 10.dp)
@@ -4622,7 +4691,7 @@ private fun ChatTab(
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                             decorationBox = { innerTextField ->
                                 Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isEmpty()) {
+                                    if (prompt.text.isEmpty()) {
                                         Text(
                                             text = "Message ${agentKind.title}…",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4666,8 +4735,8 @@ private fun ChatTab(
                                         enabled = canSend,
                                         onClick = {
                                             if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
+                                                onSend(prompt.text)
+                                                prompt = TextFieldValue()
                                             }
                                         },
                                     ),

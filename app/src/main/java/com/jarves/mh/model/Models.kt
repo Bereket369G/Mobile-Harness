@@ -72,6 +72,12 @@ enum class AgentKind(
         "Google's official coding agent · Google account",
         "39.9 MB",
     ),
+    OPENCODE(
+        "opencode",
+        "OpenCode",
+        "Open-source coding agent · keyless free models",
+        "~90 MB",
+    ),
     ;
 
     companion object {
@@ -96,6 +102,23 @@ val DSH_PROTOCOL_PROVIDERS: Set<ProviderKind> = setOf(
     ProviderKind.KIMI,
     ProviderKind.OPENCODE_ZEN,
     ProviderKind.NVIDIA_NIM,
+    ProviderKind.CUSTOM,
+)
+
+/**
+ * Provider kinds usable with [AgentKind.OPENCODE].
+ *
+ * OpenCode resolves its own credentials inside the guest (its `auth.json` plus provider
+ * env), so the app's ANTHROPIC_* wiring does not apply to it. Zen is the important entry:
+ * the genuine `opencode` client unlocks the free Zen catalog with no key at all, which is
+ * why it is listed first. The remaining entries are OpenAI-protocol gateways the bundled
+ * client can dial directly.
+ */
+val OPENCODE_PROVIDERS: Set<ProviderKind> = setOf(
+    ProviderKind.OPENCODE_ZEN,
+    ProviderKind.LLM_ROUTER,
+    ProviderKind.NVIDIA_NIM,
+    ProviderKind.KIMI,
     ProviderKind.CUSTOM,
 )
 
@@ -135,6 +158,7 @@ fun providerProtocolForAgent(profile: ProviderProfile, agent: AgentKind): Provid
 /** Provider choices shown for the selected coding agent. */
 fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
+    AgentKind.OPENCODE -> ProviderKind.entries.filter { it in OPENCODE_PROVIDERS }
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
 }

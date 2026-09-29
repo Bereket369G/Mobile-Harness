@@ -76,6 +76,26 @@
         "Sessions",
         "Chats and projects"
       ]
+    },
+    "opencode": {
+      "version": "2026.09.1",
+      "file": "pocketdev-opencode-arm64-2026.09.1.tar.zst",
+      "sha256": "",
+      "compressedBytes": 0,
+      "uncompressedBytes": 0,
+      "includes": [
+        "OpenCode 1.18.33 ARM64",
+        "opencode-ai wrapper plus opencode-linux-arm64 binary",
+        "Pinned npm dependency tree",
+        "OpenCode launcher"
+      ],
+      "excludes": [
+        "API keys",
+        "auth.json",
+        "Provider settings",
+        "Sessions",
+        "Chats and projects"
+      ]
     }
   }
 }

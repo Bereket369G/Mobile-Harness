@@ -176,8 +176,12 @@ class AppPreferences(private val context: Context) {
         val kind = when {
             agent == null -> storedKind ?: ProviderKind.ANTHROPIC
             agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
+            // OpenCode's whole appeal is that the genuine client reaches Zen's free catalog with
+            // no key, so a fresh profile opens there instead of on a key-based provider.
+            agent == AgentKind.OPENCODE && !hasAgentProfile -> ProviderKind.OPENCODE_ZEN
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
             agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
+            agent == AgentKind.OPENCODE -> ProviderKind.OPENCODE_ZEN
             else -> ProviderKind.ANTHROPIC
         }
         val useStoredValues = storedKind == kind
