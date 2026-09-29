@@ -25,6 +25,26 @@ git remote add mine git@github.com:<YOUR_USER>/<YOUR_REPO>.git   # or the https 
 git push -u mine main
 ```
 
+> **If the push is rejected because your token lacks the `workflow` scope:**
+> GitHub requires that scope to push any `.github/workflows/*.yml` file. You do
+> **not** need it to back up your code — push the repo *without* the workflow
+> file first, then add the workflow through the GitHub web UI (which needs no
+> extra scope):
+>
+> ```bash
+> git reset --soft HEAD~1
+> git reset HEAD .github/workflows/build-apk.yml   # keep it on disk, unstaged
+> git commit -m "Add build bootstrap"               # everything else
+> git push -u mine main                            # ✅ code is now backed up
+> ```
+>
+> Then open your repo on GitHub → **Add file → Create new file**, set the path to
+> `.github/workflows/build-apk.yml`, paste the workflow contents, and commit.
+> The `Build APK` workflow will then run.
+>
+> To grant the scope instead: `gh auth refresh -h github.com -s workflow`
+> (opens https://github.com/login/device; the one-time code is valid ~15 min).
+
 Pushing triggers `.github/workflows/build-apk.yml` automatically. Then:
 
 1. Open **your** repo on GitHub → the **Actions** tab → the `Build APK` run.
