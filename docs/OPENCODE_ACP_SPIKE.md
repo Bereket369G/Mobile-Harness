@@ -20,6 +20,32 @@ The summary is the important part. Paste it back and I can lock the mapping in.
 
 ---
 
+## Run 1 — already done (partial)
+
+The first device run installed `opencode@1.18.33` and completed `initialize` and
+`session/new`, then **crashed in the driver itself** before `session/prompt` was
+sent. Cause: the driver called `JSON.stringify(x).slice(0, n)`, and
+`JSON.stringify(undefined)` returns `undefined`. Real OpenCode returns neither
+`availableCommands` nor `modes` (it returns `configOptions`), so that expression
+threw. Fixed in `28fa450` with a `brief()` helper and re-verified against a mock
+mimicking the real client shape.
+
+**Confirmed by run 1:**
+
+- `protocolVersion: 1`; capabilities include `loadSession`, `mcp http/sse`,
+  `embeddedContext`+`image`, and session `close/fork/list/resume`.
+- Auth is offered (`opencode-login`) but is **not required**.
+- **The keyless free tier works.** `session/new` returns a `model`
+  `configOptions` selector with `currentValue: opencode/big-pickle` and options
+  that are all free Zen models — no login, no API key.
+- A `mode` selector offers `build` and `plan`.
+
+**What run 2 must capture:** the `session/update` stream — every kind, the tool
+call shapes, permission option ids, and the stop reason. The fixed driver now
+runs the full handshake to completion, so the same command is all that is needed.
+
+---
+
 ## Before you start (one time, on the phone)
 
 1. Open **PocketDev** and install the **core runtime** (Settings → Runtime → Install).
@@ -102,7 +128,7 @@ shape is more complex than the spec suggests.
 | `stopReason` | How a turn signals completion — currently I expect `end_turn`. |
 | `permissions` | Whether `session/request_permission` fires and with which option ids (for the Approve/Deny buttons). |
 | `fs read/write` | Whether the client leans on the app for file I/O (my bridge handles `fs/*` too). |
-| `available slash commands` | Printed right after `session/new`; this is what will populate the `/` menu. |
+| `available slash commands` | **Disproven on the first run** — the real client returns no such field. Model and mode arrive as `configOptions` selectors instead, and the driver now prints them. |
 
 If the free model returns a real (non-error) response to the default prompt, the
 keyless-free-tier path is confirmed end-to-end and the app is ready for it.

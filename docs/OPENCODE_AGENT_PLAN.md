@@ -312,11 +312,47 @@ facts the bridge depends on:
 - `docs/OPENCODE_ACP_SPIKE.md` — the device runbook: setup, exact commands, what
   to paste back, and troubleshooting.
 
-Concrete steps:
+### First on-device run: partial success + a driver bug (now fixed)
 
-1. Build/install the runtime on a device (needs the Android stack — see note).
-2. Push the two spike scripts over and run `bash run-opencode-acp-spike.sh`
-   in the app terminal (full instructions in the runbook).
+The first real guest run installed `opencode@1.18.33` and completed
+`initialize` and `session/new` — then **crashed in the driver itself** (not in
+OpenCode) before it could send `session/prompt`, so the transcript had no
+`session/update` events. Cause: the driver used
+`JSON.stringify(x).slice(0, n)`, and `JSON.stringify(undefined)` returns
+`undefined`, not a string. Real `opencode` returns no `availableCommands` and
+no `modes` on `session/new` (it returns `configOptions` instead), so that
+expression threw. Fixed in commit `28fa450` via a `brief()` helper, and
+re-verified against a mock that mimics the real client shape.
+
+**Facts the first run already confirmed (ground truth):**
+
+- `protocolVersion: 1`; capabilities include `loadSession`, `mcp http/sse`,
+  `embeddedContext`+`image` prompts, and session `close/fork/list/resume`.
+- Auth is offered as `opencode-login` ("Run `opencode auth login` in the
+  terminal") — but is **not required**.
+- **The keyless free-tier design works.** `session/new` returns a `model`
+  `configOptions` selector whose `currentValue` is `opencode/big-pickle` and
+  whose options are all free Zen models: `big-pickle`, `space-bunny-free`,
+  `ling-3.0-flash-fin-free`, `longcat-2.5-preview-free`, `mimo-v2.6-flash-free`,
+  `muse-spark-1.3-contributor-free`, `nemotron-3-ultra-free`,
+  `nemotron-3.5-lightning-free` — **no login, no API key.**
+- A `mode` selector offers `build` and `plan`.
+
+**Design consequence:** the slash-command / model metadata does **not** come
+from an `availableCommands` field as the spec suggested; the real client models
+it as typed `configOptions` selectors. The bridge's dynamic-`/` plumbing should
+therefore key off `configOptions` (model + mode), and the static
+`DEFAULT_SLASH_COMMANDS` should be driven by the model selector's option list
+where it maps, with `build`/`plan` surfaced as real modes. A second run to
+capture the full `session/update` stream (after the fix) is the remaining
+unknown; the first run validated the handshake, the model catalog, and the
+keyless premise.
+
+Concrete steps to finish the spike:
+
+1. The runtime is installed and `opencode@1.18.33` is already in the guest.
+2. Re-run `bash /workspace/nimble-hopper/scripts/runtime-bundles/run-opencode-acp-spike.sh`
+   in the app terminal (the fixed driver now completes the full handshake).
 3. Paste the summary (and ideally the transcript) back.
 
 That captured transcript is the ground truth for the event mapping and de-risks
@@ -360,7 +396,7 @@ bridges" rule.
 | UI `when`s | done | Download size, color, initials, display name. |
 | Bundle script | done | `scripts/runtime-bundles/build-opencode-from-installed-android.sh` + manifest + README entry. |
 | Free-model detection | done | Zen catalog marks free by trailing `-free` (no pricing block); anchored-suffix rule added, 11 free models verified against the live catalog. |
-| ACP spike tooling | done | `opencode-acp-spike.js` + `run-opencode-acp-spike.sh` + `docs/OPENCODE_ACP_SPIKE.md`; driver smoke-tested against a mock ACP server. Awaiting a real guest run. |
+| ACP spike tooling | done | `opencode-acp-spike.js` + `run-opencode-acp-spike.sh` + `docs/OPENCODE_ACP_SPIKE.md`; driver smoke-tested against a mock ACP server **and** run once in a real guest. Handshake, capability set, and the keyless free-model catalog are confirmed; a driver crash on the absent `availableCommands` field was found and fixed (`28fa450`). |
 | Bridge robustness | done | Unknown `session/update` kinds are surfaced (logged once) instead of dropped; any update carrying a `toolCallId` is treated as a tool call so approvals are never missed. |
 | Composer `TextFieldValue` migration | done | Chat composer converted from bare `String` to `TextFieldValue` (with `TextFieldValue.Saver`) to carry a caret for the `/` + `@` popup. |
 | Composer `/` + `@` popup | done | `ComposerAutocomplete.kt` (pure, Compose-free caret-anchored trigger detection) + `ComposerAutocompleteUi.kt` (candidate building, filtering, popup composable). Gated behind two new capabilities so only OpenCode ever sees it. Wired into `ChatTab`. 17 tests. |
@@ -386,17 +422,21 @@ unchanged) so Kotlin-only verification can run on a machine without the NDK.
 - **Bundle sha256 is empty on purpose.** `ensureOpenCodeInstalled` refuses to
   install until it is pinned, with an actionable message. Producing the real
   `.tar.zst` needs an ARM64 host with the runtime installed.
-- **ACP wire-truth unconfirmed.** The parser is written against the ACP spec,
-  but the exact `session/update` shapes OpenCode emits should be captured from
-  a real `opencode acp` run in the guest. The spike tooling to do that is
-  committed and tested (`docs/OPENCODE_ACP_SPIKE.md`); it just needs a device
-  run. That is the single de-risking step for the event mapping.
+- **ACP wire-truth is now partly confirmed.** The first real guest run verified
+  `protocolVersion: 1`, the capability set, the `session/new` response shape, and
+  the keyless free-model catalog. It stopped short of the `session/update` stream
+  because of the driver bug described above, so the exact notification kinds and
+  tool-call shapes OpenCode emits are still spec-derived rather than captured.
+  One more run of the fixed driver closes this — it is still the single
+  de-risking step for the event mapping.
 - **Slash-command list is currently a static default.** `DEFAULT_SLASH_COMMANDS`
   in `ComposerAutocompleteUi.kt` mirrors the commands OpenCode documents (minus
-  `/undo` and `/redo`, which ACP does not support). ACP advertises the real list
-  dynamically on `session/new`, so once the spike confirms that payload shape the
-  static list should be replaced by the agent-supplied one. The
-  capability-gated plumbing already carries it — nothing else needs to change.
+  `/undo` and `/redo`, which ACP does not support). The device run disproved the
+  assumption that ACP advertises them on `session/new`: the real client returns
+  **no** `availableCommands` and instead models model and mode as typed
+  `configOptions` selectors. The static list should therefore be driven from that
+  selector data (surfacing `build`/`plan` as real modes) rather than a guessed
+  command list. The capability-gated plumbing already carries it.
 - **Online model list is derived from a live catalog fetch, not the guest.** The
   free-model *labelling* is correct (verified against the live Zen catalog), but
   an actual `$0` completion still requires the bundled binary to be the caller.
