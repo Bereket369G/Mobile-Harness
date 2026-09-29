@@ -27,15 +27,29 @@ val hasUploadSigning = listOf(
     uploadKeyAlias,
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
-val runtimeReleaseBaseUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+// Base URL that runtime bundles are downloaded from when they are not embedded in
+// the APK. Deliberately left pointing at the upstream release tag: the core/rootfs and
+// the Claude/Python/Android/DSH/Antigravity bundles are only published there. The
+// OpenCode bundle is shipped *embedded* in the APK instead (see the opencode entry in
+// prepareBundledAgentAssets), so it never needs this URL. Override per build with
+// -PruntimeReleaseBaseUrl=...
+val runtimeReleaseBaseUrl = providers.gradleProperty("runtimeReleaseBaseUrl").orNull
+    ?: "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
 val appUpdateManifestUrl =
     "https://github.com/techjarves/Mobile-Harness/releases/latest/download/mobile-harness-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
-    from(runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst"))
+    // Only bundles whose .tar.zst is actually present get embedded; the rest are
+    // fetched from the release channel at first use. Sync ignores missing inputs
+    // silently, so list what is actually going in to keep that visible.
+    val embedded = listOf(
+        runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst"),
+        runtimeBundleDir.file("pocketdev-opencode-arm64-2026.09.1.tar.zst"),
+    ).filter { it.asFile.isFile }
+    logger.lifecycle("Embedding agent bundles: ${embedded.map { it.asFile.name }.ifEmpty { listOf("(none - all fetched at runtime)") }}")
+    from(embedded)
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
 }
 

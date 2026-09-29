@@ -637,6 +637,11 @@ class RuntimeInstaller(private val context: Context) {
             from = fraction,
             to = 0.995f,
             onProgress = onProgress,
+            // The OpenCode bundle is synced into shared/runtime by
+            // prepareBundledAgentAssets, so it ships inside every flavor. Read it
+            // from assets rather than fetching the upstream release URL, which only
+            // publishes the core/Claude/Python/Android/DSH/Antigravity bundles.
+            forceEmbedded = true,
         )
         verifyGuest(proot, "$OPENCODE_GUEST_BIN --version", "OpenCode verification failed")
         openCodeMarker.writeText(OPENCODE_VERSION)
@@ -1009,27 +1014,40 @@ class RuntimeInstaller(private val context: Context) {
         if (useEmbedded) {
             onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from, 0, bundle.compressedBytes))
             val temporary = File(downloads, "${bundle.fileName}.part")
-            context.assets.open("runtime/${bundle.fileName}").use { input ->
-                FileOutputStream(temporary).use { output ->
-                    val buffer = ByteArray(256 * 1024)
-                    var copied = 0L
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        copied += count
-                        val ratio = (copied.toFloat() / bundle.compressedBytes).coerceIn(0f, 1f)
-                        onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from + ratio * (to - from), copied, bundle.compressedBytes))
+            // A bundle is only embedded when its .tar.zst was present at build
+            // time. Bundles published as release assets (Claude, DSH, Antigravity)
+            // are absent from online builds, so a missing asset must fall back to
+            // the download path rather than throw FileNotFoundException.
+            val embedded = runCatching {
+                context.assets.open("runtime/${bundle.fileName}").use { input ->
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(256 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            copied += count
+                            val ratio = (copied.toFloat() / bundle.compressedBytes).coerceIn(0f, 1f)
+                            onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from + ratio * (to - from), copied, bundle.compressedBytes))
+                        }
                     }
                 }
+            }.isSuccess
+            if (embedded) {
+                require(digest(temporary, "SHA-256").equals(bundle.sha256, ignoreCase = true)) {
+                    "${bundle.label} bundle checksum mismatch"
+                }
+                if (destination.exists()) destination.delete()
+                check(temporary.renameTo(destination)) { "Could not stage the ${bundle.label} bundle" }
+                return destination
             }
-            require(digest(temporary, "SHA-256").equals(bundle.sha256, ignoreCase = true)) {
-                "${bundle.label} bundle checksum mismatch"
-            }
-            if (destination.exists()) destination.delete()
-            check(temporary.renameTo(destination)) { "Could not stage the ${bundle.label} bundle" }
-            return destination
+            temporary.delete()
+            android.util.Log.i(
+                "RuntimeInstaller",
+                "No embedded ${bundle.fileName}; fetching ${bundle.label} from the release channel",
+            )
         }
 
         val url = "${BuildConfig.RUNTIME_RELEASE_BASE_URL}/${bundle.fileName}"
