@@ -113,3 +113,37 @@ The script prints the host architecture and gates the native layer:
 The CI workflow additionally asserts the APK actually contains
 `libpocketspawn.so`, `libproot.so` and `libprootloader.so` before calling it a
 success — so a native-less build can never be mistaken for a working one.
+
+## Verified build record
+
+Run `36604202190` on `Bereket369G/Mobile-Harness` completed **success** in
+6m58s. The produced APK was downloaded and independently checked:
+
+| Check | Result |
+|---|---|
+| Package / version | `com.jarves.mh` 1.0.4 (code 5) |
+| compileSdk / targetSdk | 36 / 28 (direct-APK path, as designed) |
+| ABI | `arm64-v8a` only |
+| `lib/arm64-v8a/libpocketspawn.so` | present (9,352 B) |
+| `lib/arm64-v8a/libproot.so` | present (256,808 B) |
+| `lib/arm64-v8a/libprootloader.so` | present (7,504 B) |
+| `libtalloc.so` / `libandroid-shmem.so` | present |
+| APK size | 62,780,448 B |
+| sha256 | `289da6f56c11238e9a7a9016034437847d554c705e7759cdccdfd7543c07a464` |
+
+OpenCode support confirmed compiled into `classes7.dex`: `OpenCodeRuntimeBridge`,
+`OpenCodeAcpProtocol`, `OpenCodeAcpEvent`, `ComposerAutocomplete`,
+`buildComposerSuggestions`, and the `SLASH_COMMANDS` / `FILE_MENTIONS`
+capabilities.
+
+The `libproot.so` / `libprootloader.so` entries are the "executable carrier"
+trick working as intended — the CMake carrier `.so` is overwritten at build time
+with the real PRoot binary, which AGP then packages as a shared library.
+
+### Known limitation
+
+`OPENCODE_BUNDLE.sha256` is intentionally still empty, so the in-app installer
+refuses to install the OpenCode bundle with an actionable message. The bundle
+(`.tar.zst`) has to be produced on an ARM64 host that already has the runtime
+installed, using `scripts/runtime-bundles/build-opencode-from-installed-android.sh`,
+then its checksum filled in. The APK is otherwise complete and runnable.
