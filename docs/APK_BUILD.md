@@ -44,6 +44,13 @@ git push -u mine main
 >
 > To grant the scope instead: `gh auth refresh -h github.com -s workflow`
 > (opens https://github.com/login/device; the one-time code is valid ~15 min).
+>
+> **The REST API is not a way around it.** Creating the file via
+> `gh api -X PUT repos/<owner>/<repo>/contents/.github/workflows/...` returns
+> **HTTP 404** even with a token that can write every other path — GitHub applies
+> the same `workflow`-scope gate to the Contents API, and uses 404 (not 403) so
+> the path isn't disclosed. The gist + web-UI route above is the shortest
+> permission-free path.
 
 Pushing triggers `.github/workflows/build-apk.yml` automatically. Then:
 
