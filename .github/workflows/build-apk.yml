@@ -108,8 +108,26 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
-      - name: Attach APK to Release
+      # Attaching the APK to the Release is best-effort and must NEVER fail the
+      # build. The previous `softprops/action-gh-release@v2` step *updated* the
+      # release, which the default GITHUB_TOKEN cannot do on this repo
+      # ("Resource not accessible by integration"), turning every
+      # release-tagged run red even though the APK itself had already built,
+      # been verified, and been uploaded as an artifact. `gh release upload`
+      # against an already-published release is the correct operation here, and
+      # any failure is tolerated so the artifact stays the source of truth.
+      - name: Attach APK to Release (best effort)
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: app/build/outputs/apk/**/*.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -uo pipefail
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "no APK found; skipping release attach"
+            exit 0
+          fi
+          echo "attaching $(basename "$APK") to release $TAG"
+          gh release upload "$TAG" "$APK" --clobber --repo "$GITHUB_REPOSITORY" \
+            || echo "WARN: could not attach APK to the release (non-fatal). The APK is still available from the 'pocketdev-apk' workflow artifact."
