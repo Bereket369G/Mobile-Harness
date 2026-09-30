@@ -487,3 +487,78 @@ no source changes are needed for the toolchain; only the OpenCode bundle
 sha256 remains to be pinned. On-device, the meaningful and fully-green gate is
 the Kotlin build + unit tests with `-PmhNativeBuild=false`, which is the toggle
 this work added.
+
+---
+
+## On-device verification and the four defects it exposed
+
+A side-by-side build (`io.github.bereket369g.pocketdev`, label
+`PocketDev OpenCode`) was produced through CI and installed on the device
+alongside the original app. Running the OpenCode agent on a real device
+surfaced four defects that no host-side test could have caught, because all
+four only manifest inside PRoot or on real hardware. All are fixed and
+regression-tested (**105 tests, 0 failures**).
+
+### 1. Install detection probed a symlink chain that dangles outside PRoot
+
+The guest entry point `/usr/local/bin/opencode` is a chain of *absolute* guest
+symlinks terminating in the real ARM64 payload:
+
+```
+bin/opencode
+  -> /usr/local/lib/opencode/node_modules/.bin/opencode
+  -> ../opencode-ai/bin/opencode.exe
+  -> /usr/local/lib/opencode/node_modules/opencode-linux-arm64/bin/.l2s.opencode0001
+  -> /usr/local/lib/opencode/node_modules/opencode-linux-arm64/bin/.l2s.opencode0001.0002
+```
+
+Host-side, those absolute links do not resolve, so `File.canExecute()` on the
+entry point reported "not installed" **after a flawless install**. The app
+therefore re-downloaded the bundle indefinitely and then announced that
+OpenCode was not installed. Host-side checks now probe the concrete payload
+(`OPENCODE_PAYLOAD`), exactly as the DeepSeek Harness check already did, and
+the decision is a pure tested helper in `OpenCodeInstallPaths.kt`. The
+in-guest `verifyGuest` call sites still use the entry point, which is correct
+because inside PRoot the chain resolves.
+
+### 2. Bundle downloads were staged in a directory Android may purge
+
+Staging went to `context.cacheDir`, which the platform is free to purge under
+memory pressure. A 46 MB bundle staged there can disappear mid-transfer, and it
+surfaced as `ENOENT` on the `.part` file *after the progress bar reported
+completion* — a misleading error that looked like a missing file rather than a
+reclaim. Three changes:
+
+- staging moved to `filesDir`, which is not auto-purged;
+- a `Mutex` serialises downloads so two concurrent installs of the same bundle
+  cannot unlink each other's shared `.part` file;
+- a rejected `Range` or a stage file that vanished after writing now restarts
+  cleanly instead of surfacing a raw `ENOENT`, bounded by
+  `MAX_DOWNLOAD_RETRIES` so the self-healing path cannot recurse without limit.
+
+### 3. Onboarding demanded an API key from a provider that needs none
+
+OpenCode Zen serves a free tier with no account, but both the setup screen and
+the connection test were hard-wired around "hasKey". The only route past
+onboarding was to supply a key belonging to some *other* provider, which is
+exactly the dead end that was reported. `ProviderKind` now carries
+`worksWithoutApiKey`; the setup screen presents the key as optional, enables
+discover/validate/save without one, and `ProviderApiClient.validate` accepts an
+`allowWithoutApiKey` flag instead of short-circuiting on a blank key. The
+client already omits the `Authorization` header when the key is blank, so the
+anonymous request is well-formed.
+
+### 4. Model discovery special-cased a provider by name
+
+`AgentScreen` compared the selected provider against `OPENCODE_ZEN` to decide
+whether discovery may run without a key. It now reads `worksWithoutApiKey`, so
+any future keyless provider follows the same rule rather than needing another
+identity check.
+
+### The re-entrant setup loop
+
+After a failed setup the app legitimately returns to the setup screen on next
+launch, because onboarding was never saved. That was a *symptom* of defect 2,
+not a separate bug: the download threw before install completed, so nothing was
+ever marked ready. With staging on non-evictable storage the download completes
+and onboarding is saved normally.
