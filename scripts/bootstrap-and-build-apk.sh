@@ -355,33 +355,36 @@ build() {
   step "gradle build"
   local gw="./gradlew"
   [ -x "$gw" ] || { chmod +x "$gw" 2>/dev/null || true; }
-  local args=""
+  # Collected in an array, not a flat string: an app label may contain spaces
+  # (e.g. "PocketDev OpenCode") and a flat string would be word-split by the
+  # shell, turning the label's tail into a bogus Gradle task name.
+  local args=()
   if [ "$CAN_BUILD_NATIVE" = 1 ]; then
     log "native build ENABLED (host is $ARCH)"
   else
     log "native build DISABLED (-PmhNativeBuild=false; host is $ARCH)"
-    args="-PmhNativeBuild=false"
+    args+=("-PmhNativeBuild=false")
   fi
   # App identity. A different applicationId makes Android install this build
   # *alongside* an existing PocketDev install (separate data dir + icon) instead
   # of demanding an uninstall. Unset keeps the upstream package id.
-  [ -n "$APP_ID" ]    && args="$args -PmhApplicationId=$APP_ID"
-  [ -n "$APP_LABEL" ] && args="$args -PmhAppLabel=$APP_LABEL"
+  [ -n "$APP_ID" ]    && args+=("-PmhApplicationId=$APP_ID")
+  [ -n "$APP_LABEL" ] && args+=("-PmhAppLabel=$APP_LABEL")
   if [ -n "$APP_ID" ]; then
     log "application id : $APP_ID"
     log "app label      : ${APP_LABEL:-<default>}"
   fi
   if [ "$DRY_RUN" = 1 ]; then
-    echo "  (dry-run) would run: $gw $args $TASKS"
+    echo "  (dry-run) would run: $gw ${args[*]} $TASKS"
     return 0
   fi
-  log "running: $gw $args $TASKS"
+  log "running: $gw ${args[*]} $TASKS"
   # JAVA_HOME must be exported for the Gradle wrapper.
   if [ -z "${JAVA_HOME:-}" ] && have javac; then
     JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
     export JAVA_HOME
   fi
-  "$gw" $args $TASKS || die "gradle build FAILED -- see output above"
+  "$gw" "${args[@]}" $TASKS || die "gradle build FAILED -- see output above"
 }
 
 report() {
