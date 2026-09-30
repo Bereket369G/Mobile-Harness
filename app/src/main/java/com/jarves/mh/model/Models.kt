@@ -33,9 +33,20 @@ enum class ProviderKind(
     OPENCODE_ZEN(
         "OpenCode Zen",
         "Free models — no API key needed",
-        ProviderProtocol.OPENAI_RESPONSES,
+        // OPENAI_CHAT (/chat/completions), NOT OPENAI_RESPONSES (/responses).
+        // Verified against the live Zen API: free Zen models are rejected on
+        // /responses with `401 ModelError: "Model <id> is not supported for format
+        // openai"` — the error users hit in provider setup. The same models are
+        // served on /chat/completions. See docs/ZEN_FREE_MODELS.md.
+        ProviderProtocol.OPENAI_CHAT,
         "https://opencode.ai/zen/v1",
-        "deepseek-v4-flash",
+        // Must be a model that actually answers with no key. The previous default
+        // (`deepseek-v4-flash`) is PAID and returns `401 AuthError: Missing API key`.
+        // `big-pickle` is Zen's flagship $0 model and is the documented headliner of
+        // the free tier. We deliberately do NOT default to `space-bunny-free`: it is
+        // a novelty model that OpenCode can remove at any time, so defaulting to it
+        // would hand new users a dead default. See docs/ZEN_FREE_MODELS.md.
+        "big-pickle",
         fixedBaseUrl = true,
         fixedProtocol = true,
         worksWithoutApiKey = true,
@@ -131,7 +142,9 @@ val OPENCODE_PROVIDERS: Set<ProviderKind> = setOf(
 )
 
 fun defaultDshApiForProvider(kind: ProviderKind): String = when (kind) {
-    ProviderKind.OPENCODE_ZEN -> "openai-responses"
+    // Must track OPENCODE_ZEN's protocol: Zen serves free models on
+    // /chat/completions and rejects them on /responses.
+    ProviderKind.OPENCODE_ZEN -> "openai-completions"
     ProviderKind.NVIDIA_NIM -> "openai-completions"
     else -> "anthropic-messages"
 }

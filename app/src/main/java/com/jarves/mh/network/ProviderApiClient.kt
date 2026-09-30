@@ -99,10 +99,18 @@ class ProviderApiClient {
                     "Connection successful. Claude Code settings are ready."
                 },
             )
+            // Zen returns 401/403 for several genuinely different situations, and the
+            // generic "check your API key" advice is wrong for all but one of them.
+            // Verified live against opencode.ai/zen: FreeTierError means the model is
+            // closed to non-OpenCode clients (no key will ever fix it), RegionError
+            // means the model is not offered in the user's country, and a plain
+            // AuthError means a key is genuinely required for that (paid) model.
             response.code == 401 || response.code == 403 -> ConnectionValidation.Failure(
-                "Check this API key or select another saved key.",
+                rejectionMessage(response.body, allowWithoutApiKey),
                 providerErrorMessage(response.body),
-                "Rejected",
+                if (response.body.contains("FreeTierError", ignoreCase = true)) "Free model unavailable"
+                else if (response.body.contains("RegionError", ignoreCase = true)) "Unavailable in your region"
+                else "Rejected",
             )
             response.code == 404 -> ConnectionValidation.Failure(
                 "Check the Base URL and selected gateway protocol.",
@@ -242,6 +250,29 @@ class ProviderApiClient {
         429 -> "The provider rate limit was reached. Wait a moment and try again."
         in 500..599 -> "The provider is temporarily unavailable (HTTP $code)."
         else -> "The provider returned HTTP $code. Check the URL and account access."
+    }
+
+    /**
+     * Maps Zen's overloaded 401/403 responses to accurate, actionable guidance.
+     *
+     * These three cases are genuinely different and the generic "check your API key"
+     * advice is wrong for two of them:
+     *  - `FreeTierError` — the model is closed to non-OpenCode clients when queried
+     *    directly. No key fixes this; the bundled OpenCode agent still works, because
+     *    it is the genuine client.
+     *  - `RegionError` — the model is not offered in the user's country. Only another
+     *    model helps.
+     *  - `AuthError` (plain 401) — a key genuinely is required, e.g. a paid model.
+     */
+    private fun rejectionMessage(body: String, allowWithoutApiKey: Boolean): String = when {
+        body.contains("FreeTierError", ignoreCase = true) ->
+            "This free model can't be called directly from the app. " +
+                "Open it in a chat with the OpenCode agent, or add a Zen API key."
+        body.contains("RegionError", ignoreCase = true) ->
+            "This model isn't available in your region. Pick a different model."
+        allowWithoutApiKey ->
+            "The provider rejected the request without requiring a key. Try another model."
+        else -> "Check this API key or select another saved key."
     }
 
     private fun providerErrorMessage(body: String): String? {

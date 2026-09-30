@@ -1,5 +1,6 @@
 package com.jarves.mh.model
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,5 +49,31 @@ class KeylessProviderTest {
         // providersForAgent filters the enum in declaration order, so assert
         // membership rather than position.
         assertTrue(ProviderKind.OPENCODE_ZEN in providersForAgent(AgentKind.OPENCODE))
+    }
+
+    @Test
+    fun zenUsesChatCompletationsNotTheResponsesApi() {
+        // The user-visible symptom: every free model failed setup with
+        // `401 ModelError: ... not supported for format openai`, because the app
+        // POSTed to /v1/responses. Zen serves these models on /chat/completions,
+        // and the opencode binary itself declares @ai-sdk/openai-compatible.
+        // See docs/ZEN_FREE_MODELS.md.
+        val zen = ProviderKind.OPENCODE_ZEN
+        assertEquals(ProviderProtocol.OPENAI_CHAT, zen.protocol)
+        assertTrue(
+            "protocol must be pinned so a stored openai-responses value cannot win",
+            zen.fixedProtocol,
+        )
+    }
+
+    @Test
+    fun zenDefaultModelIsTheStableFreeModel() {
+        // Not `space-bunny-free`: it is a novelty model that OpenCode can remove at
+        // any time, so it must never be the default a new user lands on. It also
+        // must not be a paid model (the old default `deepseek-v4-flash` returns
+        // `401 AuthError: Missing API key` for a provider advertised as keyless).
+        val default = ProviderKind.OPENCODE_ZEN.defaultModel
+        assertEquals("big-pickle", default)
+        assertTrue("default must be reachable keylessly", ProviderKind.OPENCODE_ZEN.worksWithoutApiKey)
     }
 }

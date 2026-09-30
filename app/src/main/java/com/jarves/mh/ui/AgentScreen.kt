@@ -1980,13 +1980,15 @@ private fun defaultModelsForProvider(kind: ProviderKind): List<DiscoveredModel> 
     )
     // Shown before discovery runs (or when the catalog request fails). These are the
     // genuinely $0 Zen models — the catalog is public, so discovery fills in the full
-    // list on demand and always sorts the free tier to the top.
+    // list on demand and always sorts the free tier to the top. `big-pickle` leads
+    // because it is the stable headliner of the free tier; `space-bunny-free` is a
+    // novelty model that can disappear, so it is not a default.
     ProviderKind.OPENCODE_ZEN -> listOf(
-        DiscoveredModel("space-bunny-free", "Space Bunny (free)", isFree = true),
-        DiscoveredModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (free)", isFree = true),
+        DiscoveredModel("big-pickle", "Big Pickle (free)", isFree = true),
         DiscoveredModel("mimo-v2.6-flash-free", "Mimo V2.6 Flash (free)", isFree = true),
         DiscoveredModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (free)", isFree = true),
         DiscoveredModel("longcat-2.5-preview-free", "LongCat 2.5 Preview (free)", isFree = true),
+        DiscoveredModel("space-bunny-free", "Space Bunny (free)", isFree = true),
     )
     ProviderKind.NVIDIA_NIM -> listOf(
         DiscoveredModel(ProviderKind.NVIDIA_NIM.defaultModel, "Qwen 2.5 Coder 32B"),
