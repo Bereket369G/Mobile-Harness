@@ -2694,6 +2694,11 @@ private fun ProviderCredentialsStep(
     var modelSearch by rememberSaveable { mutableStateOf("") }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val hasKey = apiKey.isNotBlank() || hasStoredSecret
+    // Keyless providers (e.g. OpenCode Zen's free tier) are usable without any
+    // credential, so the setup screen must not demand a key to continue, test
+    // or save for them.
+    val canProceedWithoutKey = provider.worksWithoutApiKey
+    val credentialsOk = hasKey || canProceedWithoutKey
     val filteredModels = remember(models, modelSearch) {
         val query = modelSearch.trim()
         if (query.isEmpty()) models else models.filter {
@@ -2875,10 +2880,22 @@ private fun ProviderCredentialsStep(
                     OutlinedTextField(
                         apiKey,
                         { onApiKey(it); status = null; statusDetails = null },
-                        label = { Text("API key") },
-                        placeholder = { Text(if (hasStoredSecret) "Saved securely — leave blank to keep it" else "Enter your API key") },
+                        label = { Text(if (canProceedWithoutKey) "API key (optional)" else "API key") },
+                        placeholder = {
+                            Text(
+                                when {
+                                    hasStoredSecret -> "Saved securely — leave blank to keep it"
+                                    canProceedWithoutKey -> "Not required — free models work without a key"
+                                    else -> "Enter your API key"
+                                },
+                            )
+                        },
                         supportingText = {
-                            if (hasStoredSecret && apiKey.isBlank()) Text("A saved key is ready to use")
+                            when {
+                                canProceedWithoutKey && !hasStoredSecret ->
+                                    Text("${provider.title} includes free models that need no account")
+                                hasStoredSecret && apiKey.isBlank() -> Text("A saved key is ready to use")
+                            }
                         },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
@@ -2901,7 +2918,7 @@ private fun ProviderCredentialsStep(
                 onClick = {
                     if (models.isEmpty()) discoverModels() else showModels = true
                 },
-                enabled = baseUrl.isNotBlank() && hasKey && !isDiscovering && !isValidating,
+                enabled = baseUrl.isNotBlank() && credentialsOk && !isDiscovering && !isValidating,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 if (isDiscovering) {
@@ -2954,7 +2971,7 @@ private fun ProviderCredentialsStep(
                             isValidating = false
                         }
                     },
-                    enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating,
+                    enabled = baseUrl.isNotBlank() && model.isNotBlank() && credentialsOk && !isDiscovering && !isValidating,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                 ) {
                     if (isValidating) {

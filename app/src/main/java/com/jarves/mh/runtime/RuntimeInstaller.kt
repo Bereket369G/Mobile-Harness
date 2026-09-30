@@ -10,6 +10,8 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.delay
@@ -60,7 +62,15 @@ private data class RuntimeBundle(
 class RuntimeInstaller(private val context: Context) {
     private val runtimeDir = File(context.filesDir, "runtime")
     private val rootfs = File(runtimeDir, "ubuntu")
-    private val downloads = File(context.cacheDir, "runtime-downloads")
+    // Runtime bundles are multi-megabyte downloads that must survive a low-memory
+    // kill mid-transfer. context.cacheDir is evictable by the platform: under memory
+    // pressure Android purges it and a partially downloaded bundle vanishes from
+    // disk, which surfaces as "ENOENT" on the .part file even though the progress
+    // bar reached 100%. filesDir is not auto-purged, so staging lives there.
+    private val downloads = File(context.filesDir, "runtime-downloads")
+    // Guards downloads so two concurrent installs of the same bundle cannot both
+    // write (and unlink) the same ".part" file.
+    private val downloadLock = Mutex()
     private val coreReadyMarker = File(rootfs, ".pocket-runtime-ready")
     private val claudeMarker = File(rootfs, ".pocket-claude-version")
     // Read only for migration from Core bundles that embedded Claude Code.
@@ -259,10 +269,10 @@ class RuntimeInstaller(private val context: Context) {
                 File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() &&
                 !agyMarker.readTextOrNull().isNullOrBlank()
             com.jarves.mh.model.AgentKind.OPENCODE -> isInstalled() &&
-                // /usr/local/bin/opencode is an absolute guest path; File.exists() would resolve
-                // it against Android's host root outside PRoot, so probe the real target.
-                File(rootfs, OPENCODE_GUEST_BIN.removePrefix("/")).canExecute() &&
-                !openCodeMarker.readTextOrNull().isNullOrBlank()
+                isOpenCodeInstallComplete(
+                    File(rootfs, OPENCODE_PAYLOAD.removePrefix("/")).isFile,
+                    openCodeMarker.readTextOrNull(),
+                )
         }
     }
 
@@ -355,7 +365,9 @@ class RuntimeInstaller(private val context: Context) {
 
         openCodeMarker.readTextOrNull()
             ?.trim()
-            ?.takeIf { it.isNotEmpty() && File(rootfs, OPENCODE_GUEST_BIN.removePrefix("/")).canExecute() }
+            ?.takeIf {
+                isOpenCodeInstallComplete(File(rootfs, OPENCODE_PAYLOAD.removePrefix("/")).isFile, it)
+            }
             ?.let { put(com.jarves.mh.model.AgentKind.OPENCODE, it) }
     }
 
@@ -1846,6 +1858,19 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         expectedChecksum: String,
         algorithm: String = "SHA-256",
         onBytes: suspend (downloaded: Long, total: Long) -> Unit,
+    ): Unit = downloadLock.withLock {
+        downloadVerifiedLocked(url, destination, expectedChecksum, algorithm, onBytes)
+    }
+
+    private suspend fun downloadVerifiedLocked(
+        url: String,
+        destination: File,
+        expectedChecksum: String,
+        algorithm: String,
+        onBytes: suspend (downloaded: Long, total: Long) -> Unit,
+        // Bounds the self-healing retries below. Without a cap a bundle that is
+        // evicted on every attempt would recurse until the stack is exhausted.
+        attempt: Int = 0,
     ) {
         destination.parentFile?.mkdirs()
         if (destination.isFile && digest(destination, algorithm).equals(expectedChecksum, ignoreCase = true)) {
@@ -1864,8 +1889,22 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         // correct type) for ordinary static file hosts.
         connection.setRequestProperty("Accept", "application/octet-stream")
         if (existing > 0L) connection.setRequestProperty("Range", "bytes=$existing-")
-        check(connection.responseCode in 200..299) { "Download failed with HTTP ${connection.responseCode}" }
-        val resumed = connection.responseCode == HttpURLConnection.HTTP_PARTIAL && existing > 0L
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            // A rejected Range means the resume can never complete. Drop the
+            // partial file so the next attempt starts a clean full download
+            // instead of failing forever on the same stale ".part".
+            if (existing > 0L) {
+                temporary.delete()
+                connection.disconnect()
+                if (attempt < MAX_DOWNLOAD_RETRIES) {
+                    downloadVerifiedLocked(url, destination, expectedChecksum, algorithm, onBytes, attempt + 1)
+                    return
+                }
+            }
+            error("Download failed with HTTP $status")
+        }
+        val resumed = status == HttpURLConnection.HTTP_PARTIAL && existing > 0L
         if (!resumed) {
             temporary.delete()
             existing = 0L
@@ -1885,6 +1924,16 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             }
         }
         connection.disconnect()
+        if (!temporary.isFile) {
+            // The staged file disappeared between writing and verification (the
+            // platform reclaimed it). Retry from scratch rather than surfacing a
+            // raw ENOENT to the user, but only a bounded number of times.
+            if (attempt < MAX_DOWNLOAD_RETRIES) {
+                downloadVerifiedLocked(url, destination, expectedChecksum, algorithm, onBytes, attempt + 1)
+                return
+            }
+            error("Downloaded file for ${destination.name} vanished before verification")
+        }
         val actual = digest(temporary, algorithm)
         if (!actual.equals(expectedChecksum, ignoreCase = true)) {
             temporary.delete()
@@ -1993,7 +2042,12 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         )
 
         const val OPENCODE_VERSION = "1.18.33"
-        private const val OPENCODE_GUEST_BIN = "/usr/local/bin/opencode"
+
+        /**
+         * How many times a bundle download may restart itself after the staged
+         * file is evicted or a resume is rejected, before giving up.
+         */
+        private const val MAX_DOWNLOAD_RETRIES = 2
         private val OPENCODE_BUNDLE = RuntimeBundle(
             label = "OpenCode",
             fileName = "pocketdev-opencode-arm64-2026.09.1.tar.zst",

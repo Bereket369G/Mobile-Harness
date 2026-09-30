@@ -74,9 +74,16 @@ class ProviderApiClient {
         apiKey: String,
         protocol: ProviderProtocol,
         discoveredModels: List<DiscoveredModel>,
+        allowWithoutApiKey: Boolean = false,
     ): ConnectionValidation = withContext(Dispatchers.IO) {
-        if (baseUrl.isBlank() || model.isBlank() || apiKey.isBlank()) {
-            return@withContext ConnectionValidation.Failure("Base URL, model, and API key are required.")
+        if (baseUrl.isBlank() || model.isBlank() || (apiKey.isBlank() && !allowWithoutApiKey)) {
+            return@withContext ConnectionValidation.Failure(
+                if (apiKey.isBlank() && !allowWithoutApiKey) {
+                    "Base URL, model, and API key are required."
+                } else {
+                    "Base URL and model are required."
+                },
+            )
         }
         val endpoint = messagesEndpoint(baseUrl, protocol)
         val body = validationBody(model, protocol)

@@ -17,6 +17,13 @@ enum class ProviderKind(
     val experimental: Boolean = false,
     val fixedBaseUrl: Boolean = false,
     val fixedProtocol: Boolean = false,
+    /**
+     * True when the provider is usable with no API key: the model catalog and
+     * inference are reachable anonymously (OpenCode Zen serves a free tier with
+     * no account). Onboarding and the model picker must let the user proceed
+     * without demanding a key for these.
+     */
+    val worksWithoutApiKey: Boolean = false,
 ) {
     CLAUDE("Claude subscription", "Pro, Max, Team or Enterprise", ProviderProtocol.CLAUDE_LOGIN, "", "default"),
     ANTHROPIC("Anthropic API", "Usage billed through Console", ProviderProtocol.ANTHROPIC, "https://api.anthropic.com", "claude-sonnet-4-6"),
@@ -25,12 +32,13 @@ enum class ProviderKind(
     KIMI("Kimi", "Anthropic-compatible endpoint", ProviderProtocol.ANTHROPIC_GATEWAY, "https://api.moonshot.ai/anthropic", "kimi-k2.6", true),
     OPENCODE_ZEN(
         "OpenCode Zen",
-        "Models through the OpenCode Zen gateway",
+        "Free models — no API key needed",
         ProviderProtocol.OPENAI_RESPONSES,
         "https://opencode.ai/zen/v1",
         "deepseek-v4-flash",
         fixedBaseUrl = true,
         fixedProtocol = true,
+        worksWithoutApiKey = true,
     ),
     NVIDIA_NIM(
         "NVIDIA NIM",

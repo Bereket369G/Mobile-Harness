@@ -246,7 +246,7 @@ fun AgentScreen(
     fun discoverModels() {
         val effectiveKey = apiKey.trim().ifBlank { newApiKey.trim() }
         val supportsPublicDiscovery = selectedKind == ProviderKind.LLM_ROUTER ||
-            selectedKind == ProviderKind.OPENCODE_ZEN
+            selectedKind.worksWithoutApiKey
         if (effectiveKey.isBlank() && !supportsPublicDiscovery) {
             status = "Please enter or save an API key first to discover models."
             statusOk = false

@@ -1742,6 +1742,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             key,
             providerProtocolForAgent(profile, _state.value.agentKind),
             models,
+            allowWithoutApiKey = profile.kind.worksWithoutApiKey,
         )
     }
 
@@ -1762,6 +1763,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 key,
                 providerProtocolForAgent(profile, _state.value.agentKind),
                 emptyList(),
+                allowWithoutApiKey = profile.kind.worksWithoutApiKey,
             )
             when (result) {
                 is ConnectionValidation.Success -> _state.update {
