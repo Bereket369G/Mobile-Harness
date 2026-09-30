@@ -50,6 +50,11 @@ private data class RuntimeBundle(
     val fileName: String,
     val sha256: String,
     val compressedBytes: Long,
+    // Optional absolute download URL. Bundles published outside the upstream
+    // release channel (e.g. the OpenCode agent bundle, published as an asset of
+    // the PocketDev build repo) need to be fetched from their own location, while
+    // every other bundle keeps resolving against RUNTIME_RELEASE_BASE_URL.
+    val downloadUrl: String? = null,
 )
 
 class RuntimeInstaller(private val context: Context) {
@@ -628,8 +633,8 @@ class RuntimeInstaller(private val context: Context) {
     ) {
         if (isAgentInstalled(com.jarves.mh.model.AgentKind.OPENCODE)) return
         check(OPENCODE_BUNDLE.sha256.isNotBlank()) {
-            "The OpenCode runtime bundle is not pinned yet. Build it with " +
-                "scripts/build-opencode-from-installed-android.sh and set its sha256 in RuntimeInstaller."
+            "The OpenCode runtime bundle is not pinned. Rebuild it with " +
+                "scripts/build-opencode-from-installed-android.sh and update its sha256 in RuntimeInstaller."
         }
         installRuntimeOverlay(
             bundle = OPENCODE_BUNDLE,
@@ -637,10 +642,12 @@ class RuntimeInstaller(private val context: Context) {
             from = fraction,
             to = 0.995f,
             onProgress = onProgress,
-            // The OpenCode bundle is synced into shared/runtime by
-            // prepareBundledAgentAssets, so it ships inside every flavor. Read it
-            // from assets rather than fetching the upstream release URL, which only
-            // publishes the core/Claude/Python/Android/DSH/Antigravity bundles.
+            // Prefer an embedded copy when the build baked one in (offline and
+            // any build that staged the bundle asset). When it is absent — e.g.
+            // an online CI build where the .tar.zst is not committed — obtainRuntimeBundle
+            // falls back to OPENCODE_BUNDLE.downloadUrl, which points at the release
+            // asset published for this bundle. Either path verifies the same pinned
+            // sha256, so the agent is only marked installed once bytes match.
             forceEmbedded = true,
         )
         verifyGuest(proot, "$OPENCODE_GUEST_BIN --version", "OpenCode verification failed")
@@ -1050,7 +1057,7 @@ class RuntimeInstaller(private val context: Context) {
             )
         }
 
-        val url = "${BuildConfig.RUNTIME_RELEASE_BASE_URL}/${bundle.fileName}"
+        val url = bundle.downloadUrl ?: "${BuildConfig.RUNTIME_RELEASE_BASE_URL}/${bundle.fileName}"
         downloadVerified(url, destination, bundle.sha256) { downloaded, total ->
             val ratio = if (total > 0) downloaded.toFloat() / total else 0f
             onProgress(RuntimeInstallProgress("Downloading ${bundle.label} bundle", from + ratio * (to - from), downloaded, total.takeIf { it > 0 }))
@@ -1851,6 +1858,11 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         connection.connectTimeout = 20_000
         connection.readTimeout = 120_000
         connection.instanceFollowRedirects = true
+        // Every runtime bundle is binary. Requesting the raw octet-stream is
+        // required for GitHub release-asset API URLs, which otherwise return a
+        // JSON metadata document that fails the checksum, and is harmless (the
+        // correct type) for ordinary static file hosts.
+        connection.setRequestProperty("Accept", "application/octet-stream")
         if (existing > 0L) connection.setRequestProperty("Range", "bytes=$existing-")
         check(connection.responseCode in 200..299) { "Download failed with HTTP ${connection.responseCode}" }
         val resumed = connection.responseCode == HttpURLConnection.HTTP_PARTIAL && existing > 0L
@@ -1987,6 +1999,15 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             fileName = "pocketdev-opencode-arm64-2026.09.1.tar.zst",
             sha256 = "86ab450829bb62e72fdafe6911e702e8818bdd781c0529704b984f1f4271bdd9",
             compressedBytes = 45_954_883L,
+            // Published as a release asset of the PocketDev build repository
+            // rather than the upstream channel, because the bundle is produced
+            // from the guest runtime and is not part of upstream releases.
+            //
+            // This uses the GitHub *release asset API* endpoint rather than the
+            // human-facing releases/download URL: both are public, but the API
+            // endpoint serves the asset directly and is the one verified to
+            // return the bundle anonymously with a stable asset id.
+            downloadUrl = "https://api.github.com/repos/Bereket369G/Mobile-Harness/releases/assets/600873694",
         )
         private const val MAX_TERMINAL_LINE = 500
         private const val MAX_COLLECTED_OUTPUT = 24_000
