@@ -40,6 +40,15 @@ val appUpdateManifestUrl =
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
+// Android app identity. applicationId is what decides whether a build *replaces* an
+// existing install or *coexists* with it: a different id is treated as a separate app
+// with its own icon, data dir and permissions. The literal default keeps the upstream
+// package so tagged/upstream builds still behave identically; override
+// -PmhApplicationId=... to install side-by-side with an existing PocketDev build.
+// The label is set the same way so both icons are distinguishable on the launcher.
+val appId = providers.gradleProperty("mhApplicationId").orNull ?: "com.jarves.mh"
+val appLabel = providers.gradleProperty("mhAppLabel").orNull ?: "Mobile Harness"
+
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
     // Only bundles whose .tar.zst is actually present get embedded; the rest are
     // fetched from the release channel at first use. Sync ignores missing inputs
@@ -92,7 +101,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.jarves.mh"
+        applicationId = appId
         minSdk = 28
         // The direct APK retains the proven target-28 PRoot execution path. The
         // Play build targets current Android while its runtime path is validated.
@@ -111,6 +120,9 @@ android {
 
         buildConfigField("boolean", "IS_PLAY_BUILD", playBuild.toString())
         buildConfigField("String", "PRIVACY_POLICY_URL", buildConfigString(privacyPolicyUrl))
+        // Home-screen label for this build. Set through a build-generated resource so a
+        // side-by-side build can be told apart from an existing PocketDev install.
+        resValue("string", "app_label", appLabel)
 
         buildConfigField(
             "String",
@@ -173,6 +185,11 @@ android {
             cmake {
                 path = file("src/main/cpp/CMakeLists.txt")
                 version = "3.22.1"
+                // NOTE: do not add cmake arguments here for the shmem data dir.
+                // libandroid-shmem's compiled-in ashmem symlink dir is a best-effort
+                // default; the app always overrides it at runtime via PROOT_TMP_DIR
+                // (see RuntimeInstaller). Passing it from here would need
+                // `arguments`, which is not exposed on this AGP's Cmake DSL.
             }
         }
     }

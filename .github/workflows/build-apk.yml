@@ -59,9 +59,16 @@ jobs:
       - name: Provision toolchain and build APK
         # Installs the Android SDK, NDK r26d, CMake, the pinned native
         # submodules, then assembles the online debug APK.
+        #
+        # The application id is overridden so this APK installs *alongside* an
+        # existing PocketDev install (separate data dir + launcher icon) instead of
+        # asking Android to replace it, which would wipe the user's chats and keys.
         run: |
           chmod +x scripts/bootstrap-and-build-apk.sh
-          bash scripts/bootstrap-and-build-apk.sh --tasks :app:assembleOnlineDebug
+          bash scripts/bootstrap-and-build-apk.sh \
+            --tasks :app:assembleOnlineDebug \
+            --app-id io.github.bereket369g.pocketdev \
+            --app-label "PocketDev OpenCode"
 
       - name: Verify native libraries were produced
         run: |
@@ -76,6 +83,23 @@ jobs:
             echo "  ok $so"
           done
           echo "native engine present"
+
+      - name: Verify app identity (side-by-side install)
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          # AAPT is already on PATH from the toolchain step.
+          PKG=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" \
+                | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          LABEL=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" \
+                | sed -n "s/^application-label:'\(.*\)'$/\1/p" | head -1)
+          echo "package : $PKG"
+          echo "label   : $LABEL"
+          [ "$PKG" = "io.github.bereket369g.pocketdev" ] \
+            || { echo "FAIL: wrong applicationId '$PKG' -- this build would replace the existing app"; exit 1; }
+          [ "$LABEL" = "PocketDev OpenCode" ] \
+            || { echo "FAIL: wrong app label '$LABEL'"; exit 1; }
+          echo "side-by-side identity OK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

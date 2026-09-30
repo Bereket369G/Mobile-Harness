@@ -53,6 +53,10 @@
 #   bash scripts/bootstrap-and-build-apk.sh --offline    # assume toolchain present
 #   bash scripts/bootstrap-and-build-apk.sh --dry-run    # report, change nothing
 #
+# App identity (install alongside an existing PocketDev instead of replacing it):
+#   bash scripts/bootstrap-and-build-apk.sh \
+#     --app-id io.github.bereket369g.pocketdev --app-label "PocketDev OC"
+#
 # Environment overrides:
 #   ANDROID_HOME / ANDROID_SDK_ROOT   SDK location (default ~/.android-sdk)
 #   TOOLCHAIN_CACHE                   download cache (default /tmp/toolchain-cache)
@@ -80,12 +84,16 @@ SHMEM_REV="7f0bd7e25dbdd146265aff7c6a890029e374622d"
 TASKS=":app:assembleOnlineDebug"
 OFFLINE=0
 DRY_RUN=0
+APP_ID=""
+APP_LABEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tasks)    TASKS="${2:?--tasks needs a value}"; shift 2 ;;
-    --offline)  OFFLINE=1; shift ;;
-    --dry-run)  DRY_RUN=1; shift ;;
-    --help|-h)  sed -n '2,60p' "$0"; exit 0 ;;
+    --tasks)      TASKS="${2:?--tasks needs a value}"; shift 2 ;;
+    --offline)    OFFLINE=1; shift ;;
+    --dry-run)    DRY_RUN=1; shift ;;
+    --app-id)     APP_ID="${2:?--app-id needs a value}"; shift 2 ;;
+    --app-label)  APP_LABEL="${2:?--app-label needs a value}"; shift 2 ;;
+    --help|-h)    sed -n '2,60p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -353,6 +361,15 @@ build() {
   else
     log "native build DISABLED (-PmhNativeBuild=false; host is $ARCH)"
     args="-PmhNativeBuild=false"
+  fi
+  # App identity. A different applicationId makes Android install this build
+  # *alongside* an existing PocketDev install (separate data dir + icon) instead
+  # of demanding an uninstall. Unset keeps the upstream package id.
+  [ -n "$APP_ID" ]    && args="$args -PmhApplicationId=$APP_ID"
+  [ -n "$APP_LABEL" ] && args="$args -PmhAppLabel=$APP_LABEL"
+  if [ -n "$APP_ID" ]; then
+    log "application id : $APP_ID"
+    log "app label      : ${APP_LABEL:-<default>}"
   fi
   if [ "$DRY_RUN" = 1 ]; then
     echo "  (dry-run) would run: $gw $args $TASKS"

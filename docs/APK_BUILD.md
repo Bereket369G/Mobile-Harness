@@ -114,6 +114,39 @@ The CI workflow additionally asserts the APK actually contains
 `libpocketspawn.so`, `libproot.so` and `libprootloader.so` before calling it a
 success — so a native-less build can never be mistaken for a working one.
 
+## Installing side-by-side (keeping an existing PocketDev)
+
+Android identifies an app by `applicationId`. Building with the **same** id as an
+app you already have means Android tries to *replace* it — and refuses outright if
+the two APKs are signed with different keys ("existing package has different
+signatures"). To keep both installed, give the build a different id:
+
+```bash
+scripts/bootstrap-and-build-apk.sh \
+  --app-id io.github.bereket369g.pocketdev \
+  --app-label "PocketDev OpenCode"
+```
+
+Or directly, for the CI build (this is what `.github/workflows/build-apk.yml`
+does):
+
+```bash
+gradle :app:assembleOnlineDebug \
+  -PmhApplicationId=io.github.bereket369g.pocketdev \
+  -PmhAppLabel="PocketDev OpenCode"
+```
+
+- `applicationId` — the Android identity. A different value gives the build its
+  own icon, data dir and permissions, so it installs alongside the original and
+  **your existing chats, projects and API keys are untouched**.
+- `appLabel` — the launcher label, so the two icons are tellable apart.
+
+Both default to the upstream values (`com.jarves.mh` / "Mobile Harness"), so a
+build with no flags behaves exactly as before. Nothing else needs to change: the
+Kotlin `com.jarves.mh.*` packages are internal names, the `FileProvider`
+authority is derived from `${applicationId}`, and the app sets `PROOT_TMP_DIR`
+to its own `cacheDir` at runtime, so the native layer follows the new id too.
+
 ## Verified build record
 
 Run `36604202190` on `Bereket369G/Mobile-Harness` completed **success** in

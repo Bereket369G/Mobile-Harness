@@ -10,6 +10,13 @@ set(PROOT_ROOT "${PROJECT_ROOT}/third_party/proot/src")
 set(SHM_ROOT "${PROJECT_ROOT}/third_party/libandroid-shmem")
 set(TALLOC_ROOT "${PROJECT_ROOT}/third_party/talloc")
 
+# Data dir of the app that owns this build, used as libandroid-shmem's compiled-in
+# ashmem-key symlink directory. The app overrides this at runtime by exporting
+# PROOT_TMP_DIR (see RuntimeInstaller), which is the authoritative value; this only
+# sets the fallback for the case where that export is missing. Overridable via
+# -DMH_APP_DATA_DIR=... for standalone cmake invocations.
+set(MH_APP_DATA_DIR "/data/data/com.jarves.mh" CACHE STRING "App data dir (no trailing slash)")
+
 add_library(pocketspawn SHARED pocket_spawn.c)
 
 add_library(talloc SHARED "${TALLOC_ROOT}/talloc.c")
@@ -25,7 +32,7 @@ set_target_properties(talloc PROPERTIES OUTPUT_NAME talloc SOVERSION 2)
 
 add_library(android-shmem SHARED "${SHM_ROOT}/shmem.c")
 target_include_directories(android-shmem PUBLIC "${SHM_ROOT}")
-target_compile_definitions(android-shmem PRIVATE _PATH_TMP="/data/data/com.jarves.mh/cache/")
+target_compile_definitions(android-shmem PRIVATE _PATH_TMP="${MH_APP_DATA_DIR}/cache/")
 target_link_libraries(android-shmem PRIVATE log android)
 
 set(PROOT_SOURCES
