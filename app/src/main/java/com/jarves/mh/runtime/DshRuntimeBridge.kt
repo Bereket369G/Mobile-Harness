@@ -700,7 +700,11 @@ internal object DshRouteMapper {
                 name = "opencode-zen",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
                 defaultModel = model,
-                custom = DshCustomRoute("openai-responses", profile.resolvedBaseUrl),
+                // Must match OPENCODE_ZEN's protocol in Models.kt: Zen serves free
+                // models on /chat/completions and rejects them on /responses with
+                // `401 ModelError: "not supported for format openai"`. See
+                // docs/ZEN_FREE_MODELS.md.
+                custom = DshCustomRoute("openai-completions", profile.resolvedBaseUrl),
             )
             ProviderKind.NVIDIA_NIM -> DshRoute(
                 name = "nvidia-nim",

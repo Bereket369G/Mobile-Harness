@@ -188,11 +188,28 @@ class DshRouteMapperTest {
     }
 
     @Test
-    fun zenUsesFixedUrlAndResponsesProtocol() {
+    fun zenUsesFixedUrlAndChatCompletionsProtocol() {
         val route = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN))
         assertEquals("opencode-zen", route.name)
-        assertEquals("openai-responses", route.custom?.api)
+        // Zen serves its models on /chat/completions. On /responses every Zen model
+        // is rejected with `401 ModelError: "not supported for format openai"`, which
+        // is the error users hit in provider setup. See docs/ZEN_FREE_MODELS.md.
+        assertEquals("openai-completions", route.custom?.api)
         assertEquals("https://opencode.ai/zen/v1", route.custom?.baseUrl)
+    }
+
+    @Test
+    fun zenDshRouteMatchesTheProviderProtocol() {
+        // The DSH route is built independently of ProviderKind.protocol, so the two
+        // can silently drift. Pin them together: both must target the same wire
+        // format, or one path works while the other fails at runtime.
+        val route = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN))
+        val expected = when (ProviderKind.OPENCODE_ZEN.protocol) {
+            ProviderProtocol.OPENAI_CHAT -> "openai-completions"
+            ProviderProtocol.OPENAI_RESPONSES -> "openai-responses"
+            else -> route.custom?.api
+        }
+        assertEquals(expected, route.custom?.api)
     }
 
     @Test
